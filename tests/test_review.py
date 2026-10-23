@@ -74,3 +74,33 @@ def test_unknown_provider(monkeypatch):
 def test_oversized_diff_rejected_before_graph(monkeypatch):
     with pytest.raises(ValueError, match="25000"):
         review.review_diff("x" * 25001, ["PaymentService.cs"])
+
+
+def test_missing_ollama_model_has_actionable_error(monkeypatch):
+    from ollama import ResponseError
+
+    def missing(prompt):
+        raise ResponseError("model 'llama3.2:3b' not found", status_code=404)
+
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.2:3b")
+    monkeypatch.setattr(review, "create_model", lambda: RunnableLambda(missing))
+    with pytest.raises(review.ModelUnavailableError, match="ollama pull llama3.2:3b"):
+        review.review_diff("diff", ["src/Payments/PaymentService.cs"])
+
+
+def test_missing_model_api_returns_503(monkeypatch):
+    import app as api
+    from fastapi.testclient import TestClient
+    from ollama import ResponseError
+
+    def missing(prompt):
+        raise ResponseError("model not found", status_code=404)
+
+    monkeypatch.setattr(review, "create_model", lambda: RunnableLambda(missing))
+    with TestClient(api.app) as client:
+        response = client.post('/review', json={
+            'diff': 'diff', 'changed_paths': ['src/Payments/PaymentService.cs'],
+        })
+    assert response.status_code == 503
+    assert 'ollama pull' in response.json()['detail']
+    assert 'separate model storage' in response.json()['detail']

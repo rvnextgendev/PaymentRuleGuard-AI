@@ -494,6 +494,28 @@ use the API or Streamlit scenarios above. On a review timeout, inspect backend a
 Ollama logs and machine memory; on a connection error, verify the API is healthy.
 Do not share logs containing keys or sensitive payment data.
 
+### Fix `model 'llama3.2:3b' not found`
+
+This means Ollama is reachable but the selected model is missing on that server.
+For Python running locally against Windows Ollama, run:
+
+```powershell
+ollama pull llama3.2:3b
+ollama list
+```
+
+Retry the review after the download finishes. A model downloaded inside Docker
+is not installed in Windows Ollama. If using the Compose stack, download with
+`docker compose run --rm ollama-init` instead. If `OLLAMA_MODEL` is customized,
+pull that model name and ensure it matches the configured server.
+
+To use your Groq key instead, set `LLM_PROVIDER=groq`,
+`GROQ_MODEL=llama-3.3-70b-versatile`, and `GROQ_API_KEY` in `backend/.env`,
+then fully stop and restart the API/debug session. Existing environment variables
+can override `.env`; check the VS Code/terminal provider setting if Ollama is
+still selected. The API returns HTTP 503 with recovery instructions for a missing
+Ollama model, and Streamlit displays those instructions.
+
 ## Adding a new rule
 1. Add a unique rule ID and Markdown text.
 2. Map its component file globs and test class in `config/rule_map.json`.

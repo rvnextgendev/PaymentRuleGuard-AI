@@ -30,6 +30,12 @@ with tab1:
                 st.error("The review timed out while waiting for the model. Check the backend and Ollama logs, or try a smaller model.")
             except requests.ConnectionError:
                 st.error("Cannot connect to the review API. Check that the backend container is running and healthy.")
+            except requests.HTTPError as e:
+                try:
+                    detail = e.response.json().get("detail", "The review API returned an error.")
+                except (ValueError, AttributeError):
+                    detail = "The review API returned an error. Check the backend logs."
+                st.error(detail)
             except requests.RequestException as e:
                 st.error(f"The review request failed: {e}. Check the backend and Ollama logs for details.")
 with tab2:

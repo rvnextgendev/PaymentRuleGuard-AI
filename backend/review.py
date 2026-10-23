@@ -8,10 +8,15 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
 
 from retrieval import retrieve
+from ollama import ResponseError
 
 # Use the same configuration for FastAPI, the CLI, and GitHub reviews.
 # Injected environment variables take precedence over local development settings.
 load_dotenv(Path(__file__).with_name(".env"), override=False)
+
+
+class ModelUnavailableError(RuntimeError):
+    """The configured local model has not been downloaded."""
 
 
 class ReviewState(TypedDict, total=False):
@@ -68,11 +73,27 @@ def manual_review(state: ReviewState):
 def analyze(state: ReviewState):
     evidence = state["evidence"]
     chain = PROMPT | create_model() | StrOutputParser()
-    return {"review": chain.invoke({
-        "rules": "\n\n".join(f"SOURCE {s['path']}:\n{s['content']}" for s in evidence["sources"]),
-        "diff": state["diff"],
-        "tests": evidence["tests"],
-    })}
+    try:
+        result = chain.invoke({
+            "rules": "\n\n".join(f"SOURCE {s['path']}:\n{s['content']}" for s in evidence["sources"]),
+            "diff": state["diff"],
+            "tests": evidence["tests"],
+        })
+    except ResponseError as exc:
+        if exc.status_code == 404 and "not found" in exc.error.lower():
+            model = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+            raise ModelUnavailableError(
+                f"Ollama model '{model}' is not installed on the configured server. "
+                f"For local Windows Ollama, run: ollama pull {model}. "
+                f"For Docker Compose, run: docker compose run --rm ollama-init. "
+                "Download into the same Ollama server used by OLLAMA_BASE_URL; "
+                "Windows and Docker have separate model storage. "
+                "To use Groq instead, set LLM_PROVIDER=groq and GROQ_API_KEY "
+                "in backend/.env and restart the API."
+            ) from exc
+        raise
+    return {"review": result}
+
 
 
 builder = StateGraph(ReviewState)

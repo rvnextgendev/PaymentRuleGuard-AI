@@ -107,7 +107,12 @@ GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_API_KEY=<your-key>
 ```
 The backend loads this file automatically; injected environment variables take precedence.
-For GitHub Actions, configure the repository Actions secret `GROQ_API_KEY`.
+For GitHub Actions, open repository **Settings → Secrets and variables → Actions**:
+- Add `GROQ_API_KEY` under **Secrets**.
+- Optionally add `GROQ_MODEL` under **Variables** with a Groq model ID available to your account.
+  The workflow defaults to `llama-3.3-70b-versatile` when this variable is unset.
+
+The model name is configuration, not a secret. The API key stays in Actions secrets.
 Groq requests use a 60-second timeout and two retries. Ollama remains the default local provider.
 
 Run `python -m pytest tests -q` after installing `backend/requirements.txt` to verify

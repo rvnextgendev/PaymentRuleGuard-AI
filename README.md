@@ -279,6 +279,118 @@ The zero-amount case should fail while the negative-amount case still passes.
 Restore the original guard afterward and rerun the same command. Make this local
 experiment only with a clean file or a backup; do not commit the intentional bug.
 
+## Run GitHub Actions manually
+
+1. Open [Actions](https://github.com/rvnextgendev/PaymentRuleGuard-AI/actions)
+   and select **PaymentRuleGuard AI Review**.
+2. Click **Run workflow**, choose `main` (or a branch containing this workflow),
+   and click **Run workflow** again.
+3. Open the run and expand the .NET and Python test steps to inspect their output.
+
+Manual runs execute the test job. The AI-comment job is intentionally skipped:
+there is no pull request diff or comment destination on a manual run. No Groq key
+is needed for this test job. A failed .NET step prevents later Python steps in
+that job from executing; run Python separately locally when diagnosing both.
+
+To test the **AI PR comment**, configure the repository Actions secret
+`GROQ_API_KEY`, then use a branch in this repository:
+
+```powershell
+git checkout main
+git pull --ff-only origin main
+git checkout -b test/payment-review
+```
+
+Temporarily change `amount <= 0` to `amount < 0` in
+`sample-dotnet/PaymentRuleGuard/PaymentService.cs`, then:
+
+```powershell
+git add sample-dotnet/PaymentRuleGuard/PaymentService.cs
+git commit -m "Test zero payment regression detection"
+git push -u origin test/payment-review
+```
+
+Open a PR targeting `main`. In **Checks**, expect the .NET zero-value case to fail;
+the independent AI job should post an advisory comment citing PR-001. Fix the guard,
+commit, and push again to rerun. Do not merge the intentional regression. Fork PRs
+skip the AI-comment job. Groq rate limits, missing keys, and provider errors appear
+in the AI job logs; model findings are not deterministic test assertions.
+
+## Manual local testing and debugging
+
+### Visual Studio: sample .NET solution
+
+Open `sample-dotnet/PaymentRuleGuard.sln` in Visual Studio 2022 with .NET 8 support.
+The solution contains both the class library and xUnit test project. Build it,
+open **Test → Test Explorer**, and run the tests. To debug, set a breakpoint inside
+`PaymentService.Charge` or `RefundService.Refund`, right-click the corresponding
+test, and select **Debug**. Inspect `amount`, the request key, and the return value.
+This is a library, so use the tests rather than trying to launch it as a web app.
+
+From a terminal in the repository root:
+
+```powershell
+dotnet test sample-dotnet/PaymentRuleGuard.sln --configuration Debug
+dotnet test sample-dotnet/PaymentRuleGuard.sln --filter "FullyQualifiedName~RepeatedKeyDoesNotCreateSecondCharge" --logger "console;verbosity=detailed"
+```
+
+The transaction integration test remains skipped until provider/database fixtures
+exist. A skipped test does not prove transaction correctness.
+
+### VS Code: API and Streamlit breakpoints
+
+Install the Microsoft **Python** and **Python Debugger** extensions. From the
+repository root, create a Python environment and install dependencies:
+
+```powershell
+python -m venv backend/.venv
+.\backend\.venv\Scripts\Activate.ps1
+python -m pip install -r backend/requirements.txt
+# Copy only if backend/.env does not already exist:
+Copy-Item backend/.env.example backend/.env
+```
+
+Select `backend/.venv` using **Python: Select Interpreter**. Configure `backend/.env`
+for either host Ollama (`OLLAMA_BASE_URL=http://localhost:11434`) or Groq
+(`LLM_PROVIDER=groq`, `GROQ_API_KEY`, and `GROQ_MODEL`). Do not commit your key.
+For host Ollama, run `ollama pull llama3.2:3b` first. This local debugging mode
+needs host Ollama or Groq; the Compose Ollama service does not publish a host port.
+
+Stop the Compose stack with `docker compose down` to free ports 8000 and 8501.
+In **Run and Debug**, select **Debug FastAPI review API**, then press F5. Set
+breakpoints in `backend/app.py`, `backend/review.py` (`collect`, `route_review`,
+`analyze`), and `backend/retrieval.py`. Open http://localhost:8000/docs and execute
+`POST /review` with:
+
+```json
+{
+  "diff": "- if (amount <= 0)\n+ if (amount < 0)",
+  "changed_paths": ["src/Payments/PaymentService.cs"]
+}
+```
+
+Inspect the mapped evidence before stepping into the model call. To debug without
+an LLM, use `src/Unknown/Unknown.cs`; the graph routes to manual review.
+For the UI, start a second debugging session using **Debug Streamlit UI**, open
+http://localhost:8501, and click **Review change**. Both API and UI need to run;
+`API_URL` should be `http://localhost:8000`. Stop sessions with Shift+F5.
+
+### Python tests and Docker logs
+
+```powershell
+python -m pytest tests -v
+# Enter Python's debugger on a failing test:
+python -m pytest tests -x --pdb
+# Inspect running Compose services (when using Docker instead of F5):
+docker compose ps -a
+docker compose logs --tail 100 backend streamlit ollama ollama-init
+```
+
+Python model tests use a fake response and require no key. For a live model check,
+use the API or Streamlit scenarios above. On a review timeout, inspect backend and
+Ollama logs and machine memory; on a connection error, verify the API is healthy.
+Do not share logs containing keys or sensitive payment data.
+
 ## Adding a new rule
 1. Add a unique rule ID and Markdown text.
 2. Map its component file globs and test class in `config/rule_map.json`.

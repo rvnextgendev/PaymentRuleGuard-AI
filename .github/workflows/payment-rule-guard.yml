@@ -1,5 +1,6 @@
 name: PaymentRuleGuard AI Review
 on:
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened]
 permissions:
@@ -14,14 +15,14 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: xUnit tests and coverage
-        run: dotnet test sample-dotnet/PaymentRuleGuard.Tests/PaymentRuleGuard.Tests.csproj --configuration Release --collect:"XPlat Code Coverage" --logger trx
+        run: dotnet test sample-dotnet/PaymentRuleGuard.sln --configuration Release --collect:"XPlat Code Coverage" --logger trx
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: pip install -r backend/requirements.txt
       - run: python -m pytest tests -q
   ai-review:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

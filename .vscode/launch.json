@@ -6,20 +6,38 @@
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
-      "args": ["app:app", "--host", "127.0.0.1", "--port", "8000"],
+      "args": [
+        "app:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
       "cwd": "${workspaceFolder}/backend",
       "envFile": "${workspaceFolder}/backend/.env",
-      "justMyCode": true
+      "justMyCode": true,
+      "python": "${workspaceFolder}/backend/.venv/bin/python",
+      "windows": {
+        "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe"
+      }
     },
     {
       "name": "Debug Streamlit UI",
       "type": "debugpy",
       "request": "launch",
       "module": "streamlit",
-      "args": ["run", "streamlit_app.py", "--server.port=8501"],
+      "args": [
+        "run",
+        "streamlit_app.py",
+        "--server.port=8501"
+      ],
       "cwd": "${workspaceFolder}/backend",
       "envFile": "${workspaceFolder}/backend/.env",
-      "justMyCode": true
+      "justMyCode": true,
+      "python": "${workspaceFolder}/backend/.venv/bin/python",
+      "windows": {
+        "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe"
+      }
     }
   ]
 }

@@ -494,6 +494,49 @@ use the API or Streamlit scenarios above. On a review timeout, inspect backend a
 Ollama logs and machine memory; on a connection error, verify the API is healthy.
 Do not share logs containing keys or sensitive payment data.
 
+### Local Python with Docker Ollama: fix connection refused
+
+`WinError 10061` means no service is accepting connections at the configured
+Ollama address. Use the optional debug Compose override to publish port 11435
+without conflicting with Windows Ollama on 11434. From the repository root:
+
+```powershell
+docker compose stop backend streamlit
+docker compose -f compose.yaml -f compose.debug.yaml up -d ollama ollama-init
+docker compose -f compose.yaml -f compose.debug.yaml logs -f ollama-init
+```
+
+Wait for the model download to finish, then press Ctrl+C to leave logs.
+Verify the server and model directly:
+
+```powershell
+Invoke-RestMethod http://localhost:11435/api/tags
+```
+
+The returned model list should contain `llama3.2:3b`. Set `backend/.env`:
+
+```dotenv
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2:3b
+OLLAMA_BASE_URL=http://localhost:11435
+API_URL=http://localhost:8000
+```
+
+Stop any terminal Uvicorn process with Ctrl+C, stop previous debug sessions, and
+press F5 with **Debug FastAPI review API** selected. The checked-in configuration
+explicitly uses the repository `backend/.venv` interpreter on Windows/macOS/Linux.
+If that environment does not exist, create and install it using the steps above.
+Do not launch using a global Python that reports `No module named uvicorn`.
+
+If `/api/tags` still refuses connections, inspect
+`docker compose -f compose.yaml -f compose.debug.yaml ps -a` and the Ollama logs.
+If no 11435 mapping appears, check the rendered configuration with
+`docker compose -f compose.yaml -f compose.debug.yaml config`.
+Use the same `-f` arguments for subsequent Compose updates while debugging;
+plain `docker compose up` can recreate Ollama without the debug port mapping.
+To stop this stack, use
+`docker compose -f compose.yaml -f compose.debug.yaml down`; models are retained.
+
 ### Fix `model 'llama3.2:3b' not found`
 
 This means Ollama is reachable but the selected model is missing on that server.

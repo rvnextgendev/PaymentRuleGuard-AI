@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import httpx
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
@@ -104,3 +105,23 @@ def test_missing_model_api_returns_503(monkeypatch):
     assert response.status_code == 503
     assert 'ollama pull' in response.json()['detail']
     assert 'separate model storage' in response.json()['detail']
+
+
+@pytest.mark.parametrize('error_type', [ConnectionError, httpx.ConnectError])
+def test_ollama_connection_refused_is_actionable(monkeypatch, error_type):
+    import app as api
+    from fastapi.testclient import TestClient
+
+    def refused(prompt):
+        raise error_type('Connection refused')
+
+    monkeypatch.setenv('LLM_PROVIDER', 'ollama')
+    monkeypatch.setenv('OLLAMA_BASE_URL', 'http://localhost:11435')
+    monkeypatch.setattr(review, 'create_model', lambda: RunnableLambda(refused))
+    with TestClient(api.app) as client:
+        response = client.post('/review', json={
+            'diff': 'diff', 'changed_paths': ['src/Payments/PaymentService.cs'],
+        })
+    assert response.status_code == 503
+    assert 'Cannot connect to Ollama at http://localhost:11435' in response.json()['detail']
+    assert 'docker compose up' in response.json()['detail']

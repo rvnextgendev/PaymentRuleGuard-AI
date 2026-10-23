@@ -1,4 +1,5 @@
 import os
+import httpx
 from pathlib import Path
 from typing import TypedDict
 
@@ -16,7 +17,7 @@ load_dotenv(Path(__file__).with_name(".env"), override=False)
 
 
 class ModelUnavailableError(RuntimeError):
-    """The configured local model has not been downloaded."""
+    """The configured model service is unavailable."""
 
 
 class ReviewState(TypedDict, total=False):
@@ -79,6 +80,19 @@ def analyze(state: ReviewState):
             "diff": state["diff"],
             "tests": evidence["tests"],
         })
+    except (httpx.ConnectError, ConnectionError) as exc:
+        provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
+        if provider != "ollama":
+            raise
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        raise ModelUnavailableError(
+            f"Cannot connect to Ollama at {base_url}. "
+            "For local Python with Docker Ollama, publish 127.0.0.1:11435:11434, "
+            "start docker compose up -d ollama ollama-init, and set "
+            "OLLAMA_BASE_URL=http://localhost:11435 in backend/.env. "
+            "Restart the Python debug session after changing configuration. "
+            "For Python inside Compose, use http://ollama:11434."
+        ) from exc
     except ResponseError as exc:
         if exc.status_code == 404 and "not found" in exc.error.lower():
             model = os.getenv("OLLAMA_MODEL", "llama3.2:3b")

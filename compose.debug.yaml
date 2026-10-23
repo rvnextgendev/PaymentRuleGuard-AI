@@ -1,0 +1,6 @@
+# Publish Docker Ollama for Python running locally in VS Code.
+# docker compose -f compose.yaml -f compose.debug.yaml up -d ollama ollama-init
+services:
+  ollama:
+    ports:
+      - "127.0.0.1:11435:11434"

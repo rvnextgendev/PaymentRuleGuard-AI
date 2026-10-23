@@ -1,5 +1,6 @@
 import json
 import sys
+from urllib.error import HTTPError
 from pathlib import Path
 
 import pytest
@@ -54,3 +55,25 @@ def test_empty_github_response_posts_manual_review_comment(monkeypatch):
     assert calls[1][1] == "POST"
     assert "MANUAL REVIEW REQUIRED" in calls[1][2]["body"]
     assert "no changed files" in calls[1][2]["body"]
+
+
+@pytest.mark.parametrize("status", [403, 500])
+def test_failed_comment_preserves_summary(monkeypatch, tmp_path, status):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setenv("PR_NUMBER", "2")
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+
+    def request(url, method="GET", payload=None):
+        if method == "POST":
+            raise HTTPError(url, status, "Denied", {}, None)
+        return "[]"
+
+    monkeypatch.setattr(github_review, "request", request)
+    if status == 403:
+        with pytest.raises(RuntimeError, match="pull-requests: write"):
+            github_review.main()
+    else:
+        with pytest.raises(HTTPError):
+            github_review.main()
+    assert "MANUAL REVIEW REQUIRED" in summary.read_text(encoding="utf-8")

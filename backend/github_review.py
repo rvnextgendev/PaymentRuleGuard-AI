@@ -1,4 +1,6 @@
 import json, os, urllib.request
+from pathlib import Path
+from urllib.error import HTTPError
 from review import review_diff
 
 def request(url, method="GET", payload=None, accept="application/vnd.github+json"):
@@ -44,7 +46,20 @@ def main():
         page += 1
     review = review_files(files)
     body = "### 🛡️ PaymentRuleGuard AI (advisory)\n\n" + review[:50000] + "\n\n> Human review and CI tests remain mandatory."
-    request(f"{api}/issues/{number}/comments", method="POST", payload={"body": body})
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with Path(summary_path).open("a", encoding="utf-8") as summary:
+            summary.write(body + "\n")
+    try:
+        request(f"{api}/issues/{number}/comments", method="POST", payload={"body": body})
+    except HTTPError as exc:
+        if exc.code == 403:
+            raise RuntimeError(
+                "GitHub denied the PR comment (403). Grant the ai-review job "
+                "pull-requests: write and check repository/organization Actions token restrictions. "
+                "The review is preserved in the Actions job summary when available."
+            ) from exc
+        raise
     print("Posted advisory PR comment")
 
 

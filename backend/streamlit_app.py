@@ -10,14 +10,28 @@ with tab1:
     path = st.text_input("Changed C# file", "src/Payments/PaymentService.cs")
     diff = st.text_area("Paste Git diff", "- if (amount <= 0)\n+ if (amount < 0)", height=180)
     if st.button("Review change", type="primary"):
-        try:
-            r = requests.post(API+"/review",json={"changed_paths":[path],"diff":diff},timeout=180)
-            r.raise_for_status()
-            data=r.json()
-            st.markdown(data["review"])
-            with st.expander("Mapped rules and tests"):
-                st.json(data["evidence"])
-        except requests.RequestException as e: st.error(str(e))
+        if not path.strip() or not diff.strip():
+            st.warning("Enter a changed file path and a diff before reviewing.")
+        else:
+            try:
+                with st.spinner("Reviewing your change with the AI model… The first local review can take several minutes."):
+                    r = requests.post(
+                        API + "/review",
+                        json={"changed_paths": [path.strip()], "diff": diff},
+                        timeout=(10, 600),
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                st.success("Review complete")
+                st.markdown(data["review"])
+                with st.expander("Mapped rules and tests"):
+                    st.json(data["evidence"])
+            except requests.Timeout:
+                st.error("The review timed out while waiting for the model. Check the backend and Ollama logs, or try a smaller model.")
+            except requests.ConnectionError:
+                st.error("Cannot connect to the review API. Check that the backend container is running and healthy.")
+            except requests.RequestException as e:
+                st.error(f"The review request failed: {e}. Check the backend and Ollama logs for details.")
 with tab2:
     if st.button("Load rule mapping"):
         try:

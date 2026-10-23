@@ -5,8 +5,6 @@ services:
     image: ollama/ollama:0.11.11
     volumes:
       - ollama-data:/root/.ollama
-    ports:
-      - "127.0.0.1:11434:11434"
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s

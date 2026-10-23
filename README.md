@@ -30,11 +30,12 @@ builds the Python image and downloads the model. Later starts reuse the named
 `ollama-data` volume. `ollama-init` exiting with code 0 is expected.
 
 Once ready, open Streamlit at http://localhost:8501. The API is at
-http://localhost:8000/docs and Ollama is at http://localhost:11434.
-Ports bind only to the local machine. Inside Docker, Streamlit calls
+http://localhost:8000/docs. Ollama is available only inside the Compose network;
+it does not publish a host port, so an existing Windows/host Ollama can keep running.
+The API and Streamlit ports bind only to the local machine. Inside Docker, Streamlit calls
 `http://backend:8000` and the API calls `http://ollama:11434`.
 No Groq key or host Ollama installation is required. An existing host service
-using ports 11434, 8000, or 8501 must be stopped or the host ports changed in
+using ports 8000 or 8501 must be stopped or the host ports changed in
 `compose.yaml`.
 
 ### Check status and logs
@@ -50,6 +51,22 @@ Use the Streamlit Review tab with the demo below to exercise the local model.
 Model inference can take longer on CPU than the UI request timeout. If startup
 fails, inspect `docker compose logs ollama ollama-init backend` and check available
 memory, disk space, and model-registry connectivity.
+
+### Update an existing checkout (including the Ollama port conflict fix)
+
+From the repository root in PowerShell or a terminal:
+
+```bash
+git pull --ff-only origin main
+docker compose down
+docker compose up --build -d
+docker compose logs -f ollama-init
+```
+
+This retains the downloaded models. If Git reports local edits to `compose.yaml`,
+back up your changes and resolve them before pulling. The updated `ollama` service
+has no `ports` section. If Docker still reports a bind on port 11434, run
+`docker compose config` and check for an old port mapping in a Compose override file.
 
 ### Stop and restart
 

@@ -337,30 +337,75 @@ dotnet test sample-dotnet/PaymentRuleGuard.sln --filter "FullyQualifiedName~Repe
 The transaction integration test remains skipped until provider/database fixtures
 exist. A skipped test does not prove transaction correctness.
 
-### VS Code: API and Streamlit breakpoints
+### Debug Python locally on Windows with VS Code
 
-Install the Microsoft **Python** and **Python Debugger** extensions. From the
-repository root, create a Python environment and install dependencies:
+Run the Python processes on your computer to hit local breakpoints. Rebuilding a
+Docker image is not needed for this workflow. Open the **repository root folder**
+in VS Code (the folder containing `.vscode/launch.json`), not only `backend`.
+Install the Microsoft **Python** and **Python Debugger** extensions.
+
+#### 1. Prepare the Python interpreter
+
+Open a PowerShell terminal in the repository root:
 
 ```powershell
+python --version  # Python 3.11 or newer
 python -m venv backend/.venv
-.\backend\.venv\Scripts\Activate.ps1
-python -m pip install -r backend/requirements.txt
-# Copy only if backend/.env does not already exist:
-Copy-Item backend/.env.example backend/.env
+# Use the environment's executable directly; activation is optional:
+.\backend\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+if (-not (Test-Path backend/.env)) {
+    Copy-Item backend/.env.example backend/.env
+}
 ```
 
-Select `backend/.venv` using **Python: Select Interpreter**. Configure `backend/.env`
-for either host Ollama (`OLLAMA_BASE_URL=http://localhost:11434`) or Groq
-(`LLM_PROVIDER=groq`, `GROQ_API_KEY`, and `GROQ_MODEL`). Do not commit your key.
-For host Ollama, run `ollama pull llama3.2:3b` first. This local debugging mode
-needs host Ollama or Groq; the Compose Ollama service does not publish a host port.
+Press Ctrl+Shift+P, choose **Python: Select Interpreter**, then select
+`backend/.venv/Scripts/python.exe`. If it is not listed, choose **Enter interpreter
+path** and browse to it. The checked-in debug configurations use this interpreter.
+
+For macOS/Linux, use `python3 -m venv backend/.venv`, install with
+`backend/.venv/bin/python -m pip install -r backend/requirements.txt`, and select
+`backend/.venv/bin/python` instead.
+
+#### 2. Choose Groq or local Ollama
+
+Edit `backend/.env`. For Groq:
+
+```dotenv
+LLM_PROVIDER=groq
+GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_API_KEY=<your-real-key-entered-only-in-this-local-file>
+API_URL=http://localhost:8000
+```
+
+GitHub Actions secrets are not automatically available on your computer. Never
+commit your key or paste it into screenshots. `backend/.env` is ignored by Git.
+Alternatively, for Ollama running on your computer:
+
+```dotenv
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2:3b
+OLLAMA_BASE_URL=http://localhost:11434
+API_URL=http://localhost:8000
+```
+
+Start host Ollama and run `ollama pull llama3.2:3b`. The Compose Ollama service is
+internal-only, so it is not reachable at the host URL above. Restart your debug
+session after editing `.env`. Existing process environment variables take precedence
+if they have the same names.
+
+#### 3. Debug the API first
 
 Stop the Compose stack with `docker compose down` to free ports 8000 and 8501.
-In **Run and Debug**, select **Debug FastAPI review API**, then press F5. Set
-breakpoints in `backend/app.py`, `backend/review.py` (`collect`, `route_review`,
-`analyze`), and `backend/retrieval.py`. Open http://localhost:8000/docs and execute
-`POST /review` with:
+This keeps downloaded models. In VS Code:
+
+1. Open `backend/app.py` and click the left gutter beside
+   `return review_diff(req.diff, req.changed_paths)` to set a breakpoint.
+2. Add breakpoints in `backend/review.py` inside `collect`, `route_review`, and
+   `analyze`, and in `backend/retrieval.py` inside `retrieve`.
+3. Open **Run and Debug** (Ctrl+Shift+D), select **Debug FastAPI review API**,
+   and press F5. Wait for Uvicorn to report application startup complete.
+4. Open http://localhost:8000/docs, expand **POST /review**, click **Try it out**,
+   paste the JSON below, and click **Execute**:
 
 ```json
 {
@@ -369,11 +414,69 @@ breakpoints in `backend/app.py`, `backend/review.py` (`collect`, `route_review`,
 }
 ```
 
-Inspect the mapped evidence before stepping into the model call. To debug without
-an LLM, use `src/Unknown/Unknown.cs`; the graph routes to manual review.
-For the UI, start a second debugging session using **Debug Streamlit UI**, open
-http://localhost:8501, and click **Review change**. Both API and UI need to run;
-`API_URL` should be `http://localhost:8000`. Stop sessions with Shift+F5.
+The debugger should pause at the API breakpoint. Inspect `req.diff` and
+`req.changed_paths` in **Variables**. In the graph, inspect `state` and its
+`evidence` field, including rule sources, unmapped paths, and mapped tests.
+Use F10 to step over, F11 to step into your code, Shift+F11 to step out, and F5
+to continue. LangGraph schedules nodes, so breakpoints in each node are the
+clearest way to follow the flow. Shift+F5 stops the selected session.
+
+For a model-free check, send the same request with
+`changed_paths: ["src/Unknown/Unknown.cs"]`. It should pause in `collect` and
+`route_review`, then return manual review without entering `analyze`.
+
+You can also trigger a request from a second PowerShell terminal:
+
+```powershell
+$reviewBody = @{
+    diff = "- if (amount <= 0)`n+ if (amount < 0)"
+    changed_paths = @("src/Payments/PaymentService.cs")
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/review -ContentType "application/json" -Body $reviewBody
+```
+
+#### 4. Debug the Streamlit button
+
+Keep the API debug session running. Set a breakpoint in
+`backend/streamlit_app.py` at `r = requests.post(...)`. Select
+**Debug Streamlit UI** in **Run and Debug** and start a second session using the
+green play button. Open http://localhost:8501 and click **Review change**.
+
+The UI breakpoint pauses before the request. Continue with F5, then switch to the
+API session when its breakpoint is hit. Continue both sessions to see the review
+result. The UI waits up to ten minutes for the API; long pauses at API breakpoints
+can cause a timeout. Use `/docs` directly when stepping slowly through backend code.
+
+#### 5. Debug Python tests without an API key
+
+With the selected virtual environment, open the VS Code **Testing** panel, choose
+**Configure Python Tests**, select **pytest**, then select the `tests` folder.
+Set a breakpoint in `backend/review.py` or `backend/retrieval.py`, and use **Debug
+Test** beside a test such as `test_graph_runs_langchain_with_mapped_evidence`.
+The model is mocked for that test, so Ollama and Groq are not required.
+
+To start directly in Python's terminal debugger:
+
+```powershell
+.\backend\.venv\Scripts\python.exe -m pytest tests/test_review.py::test_graph_runs_langchain_with_mapped_evidence --trace -s
+```
+
+Use `n` for next, `s` to step into, `p state` when inside a graph node to inspect
+state, `c` to continue, and `q` to quit. Use `--pdb` instead of `--trace` to enter
+the debugger only after a test failure.
+
+#### If a breakpoint does not hit
+
+- A hollow breakpoint usually means the file has not loaded yet or the wrong
+  interpreter/file is being used. Check the selected interpreter and open the root folder.
+- A breakpoint inside `if st.button(...)` needs an actual button click.
+- An `analyze` breakpoint will not hit for an unmapped C# path; that route skips the LLM.
+- If the API returns results but local breakpoints never hit, stop old terminal
+  Uvicorn processes and Docker services; send the request to the F5-launched API.
+- For `ModuleNotFoundError`, install requirements using the same interpreter VS Code selected.
+- For port errors, stop the previous debug session or container using 8000/8501.
+- The API launch configuration intentionally omits `--reload` to keep debugging in
+  one process. Stop and restart the debug session after backend code changes.
 
 ### Python tests and Docker logs
 

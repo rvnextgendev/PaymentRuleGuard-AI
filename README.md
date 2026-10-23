@@ -344,6 +344,99 @@ Docker image is not needed for this workflow. Open the **repository root folder*
 in VS Code (the folder containing `.vscode/launch.json`), not only `backend`.
 Install the Microsoft **Python** and **Python Debugger** extensions.
 
+#### Complete VS Code walkthrough: local Python + Docker Ollama
+
+Follow this sequence when debugging Python on Windows while Ollama runs in Docker.
+Docker Desktop must be running. Python runs under the VS Code debugger, while
+only Ollama and its model-download job need Docker.
+
+1. Stop your existing API: click the terminal running Uvicorn and press **Ctrl+C**.
+   If a VS Code debug session is running, stop it with **Shift+F5**.
+2. Select **File → Open Folder** and open
+   `C:\Users\RajeshDas\PaymentRuleGuard-AI` (or your checkout location).
+   Open the repository root, not just `backend`; `.vscode/launch.json` must be
+   inside the opened folder.
+3. Open **Terminal → New Terminal**. From the repository root, update the code
+   and install dependencies. The `.env` copy below preserves an existing file:
+
+   ```powershell
+   git pull --ff-only origin main
+   # Create the environment only if it does not already exist:
+   if (-not (Test-Path backend/.venv/Scripts/python.exe)) {
+       python -m venv backend/.venv
+   }
+   .\backend\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+   if (-not (Test-Path backend/.env)) {
+       Copy-Item backend/.env.example backend/.env
+   }
+   docker compose stop backend streamlit
+   docker compose -f compose.yaml -f compose.debug.yaml up -d ollama ollama-init
+   docker compose -f compose.yaml -f compose.debug.yaml logs -f ollama-init
+   ```
+
+   Wait for the model download to complete. Press **Ctrl+C** to leave the logs;
+   this does not stop Ollama. If Git reports local edits, preserve and resolve
+   them before pulling; do not discard your changes.
+4. Open `backend/.env` in VS Code and set:
+
+   ```dotenv
+   LLM_PROVIDER=ollama
+   OLLAMA_MODEL=llama3.2:3b
+   OLLAMA_BASE_URL=http://localhost:11435
+   API_URL=http://localhost:8000
+   ```
+
+   Verify the published Docker endpoint from the terminal:
+
+   ```powershell
+   Invoke-RestMethod http://localhost:11435/api/tags
+   ```
+
+   The model list should contain `llama3.2:3b`. If the connection fails, follow
+   **Local Python with Docker Ollama: fix connection refused** below before F5.
+5. Press **Ctrl+Shift+X** and install Microsoft's **Python** and **Python Debugger**
+   extensions.
+6. Press **Ctrl+Shift+P**, search for **Python: Select Interpreter**, and choose
+   `backend\.venv\Scripts\python.exe`. If it is missing, select
+   **Enter interpreter path → Find** and browse to that executable.
+7. Open `backend/app.py`. Click the left margin beside
+   `return review_diff(req.diff, req.changed_paths)`; a red breakpoint dot appears.
+   For graph debugging, add breakpoints in `backend/review.py` inside `collect`,
+   `route_review`, and `analyze`.
+8. Press **Ctrl+Shift+D** to open **Run and Debug**. Select
+   **Debug FastAPI review API** from the top dropdown and press **F5**. The launch
+   configuration explicitly uses `backend/.venv`. Wait for application startup
+   complete in the terminal. Do not start another terminal Uvicorn process.
+9. Open http://localhost:8000/docs, expand **POST /review**, click **Try it out**,
+   replace the example body with the following JSON, and click **Execute**:
+
+   ```json
+   {
+     "diff": "- if (amount <= 0)\n+ if (amount < 0)",
+     "changed_paths": ["src/Payments/PaymentService.cs"]
+   }
+   ```
+
+10. VS Code should pause at the breakpoint. Inspect `req.diff` and
+    `req.changed_paths` under **Variables**. Use **F10** to step over, **F11** to
+    step into, **Shift+F11** to step out, and **F5** to continue. Continue until
+    Swagger receives the review. The model should identify the PR-001 zero-value
+    payment issue; wording varies and no .NET tests run from this request.
+11. To debug Streamlit as well, keep the API session running, set a breakpoint
+    at `r = requests.post(...)` in `backend/streamlit_app.py`, select
+    **Debug Streamlit UI**, and click the green play button to start a second
+    debug session. Open http://localhost:8501 and click **Review change**.
+    Continue each session when its breakpoint is hit.
+12. When finished, stop both Python sessions with **Shift+F5** (select each
+    session as needed). To stop Docker Ollama while keeping its downloaded model:
+
+    ```powershell
+    docker compose -f compose.yaml -f compose.debug.yaml down
+    ```
+
+For a model-free API check at step 9, use `src/Unknown/Unknown.cs` as the changed
+path. The graph returns manual review and skips the model call and `analyze` node.
+
 #### 1. Prepare the Python interpreter
 
 Open a PowerShell terminal in the repository root:

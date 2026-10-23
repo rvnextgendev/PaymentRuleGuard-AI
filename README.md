@@ -137,14 +137,147 @@ retrieval, graph routing, LangChain prompt/output handling, and provider configu
 These tests use a fake model and do not require credentials or contact an LLM service.
 A live Groq review additionally requires a valid key and access to `api.groq.com`.
 
-## Demo scenario
-Review `src/Payments/PaymentService.cs` with diff:
+## Scenarios to test in Streamlit
+
+Start the stack, open http://localhost:8501, and select **PR Review**.
+For each scenario below, copy the path into **Changed C# file**, paste the diff
+into **Paste Git diff**, and click **Review change**. Wait for **Review complete**;
+local CPU inference can take several minutes. Expand **Mapped rules and tests**
+to inspect the evidence.
+
+These snippets are review inputs; pasting them does not modify or execute the .NET
+application. AI wording and findings may vary. The rule IDs and mapped tests below
+are the expected evidence; check whether the model explains the relevant violation.
+The UI does not run xUnit tests and must not claim they passed.
+
+### 1. Zero-value payment is accepted
+
+Path: `src/Payments/PaymentService.cs`
+
+```diff
+- if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
++ if (amount < 0) throw new ArgumentOutOfRangeException(nameof(amount));
 ```
-- if (amount <= 0)
-+ if (amount < 0)
+
+Expected finding: zero payments are now allowed, violating **PR-001** in
+`rules/global.md`. Evidence should map `PaymentRuleGuard.Tests.PaymentTests`;
+the relevant test is `RejectsNonPositiveAmounts`.
+
+### 2. Duplicate charge protection is removed
+
+Path: `src/Payments/PaymentService.cs`
+
+```diff
+- return _processed.Add(idempotencyKey);
++ return true;
 ```
-Rule `PR-001` says zero-value payments are invalid, and `PaymentTests.RejectsNonPositiveAmounts` covers it.
-For a *real test failure*, change the condition in `sample-dotnet/PaymentRuleGuard/PaymentService.cs` and run `dotnet test`.
+
+Expected finding: repeated requests report a new successful charge, violating
+**PR-002** in `rules/global.md`. Recommend
+`PaymentTests.RepeatedKeyDoesNotCreateSecondCharge`.
+
+### 3. Refund exceeds the captured amount
+
+Path: `src/Refunds/RefundService.cs`
+
+```diff
+- if (amount <= 0 || amount > capturedAmount) throw new ArgumentOutOfRangeException(nameof(amount));
++ if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+```
+
+Expected finding: an excessive refund is accepted, violating **RF-001** in
+`rules/refunds.md`. Evidence includes global and refund rules and maps
+`PaymentRuleGuard.Tests.RefundTests`. Recommend `RefundTests.RejectsInvalidRefunds`.
+
+### 4. Duplicate refund protection is removed
+
+Path: `src/Refunds/RefundService.cs`
+
+```diff
+- return _refunded.Add(requestKey);
++ return true;
+```
+
+Expected finding: repeated refund keys succeed again, violating **RF-002** in
+`rules/refunds.md`. Recommend `RefundTests.DuplicateRefundKeyDoesNotRefundAgain`.
+
+### 5. Sensitive payment information is logged
+
+Path: `src/Payments/PaymentService.cs`
+
+```diff
++ logger.LogInformation("Card={CardNumber}, CVV={Cvv}", cardNumber, cvv);
+```
+
+Expected finding: logging card details violates **PR-003** in `rules/global.md`.
+Use only placeholder data. This is an illustrative snippet; the sample service has
+no logger/card fields. No dedicated PR-003 xUnit test exists yet; the reviewer
+should recommend adding one rather than inventing a passing test.
+
+### 6. Transaction is completed before provider confirmation
+
+Path: `src/Transactions/TransactionService.cs`
+
+```diff
+- var confirmation = await provider.ChargeAsync(request);
+- payment.Status = confirmation.Success ? "Completed" : "Failed";
++ payment.Status = "Completed";
++ var confirmation = await provider.ChargeAsync(request);
+```
+
+Expected finding: **TX-001** in `rules/transactions.md` is violated. Evidence maps
+`PaymentRuleGuard.Tests.TransactionTests` and also includes **TX-002** and global
+rules. The existing transaction integration test is **skipped**, not passed.
+This illustrative service is not implemented in the sample .NET project.
+
+### 7. Unknown C# component requires manual review
+
+Path: `src/Unknown/Unknown.cs`
+
+```diff
++ public bool Process() => true;
+```
+
+Expected deterministic result: `MANUAL REVIEW REQUIRED: unmapped C# paths:` followed
+by the path. No LLM call is made, so this scenario works even without a model or
+API key once the backend is running. Inspect `evidence.unmapped` for the same path.
+
+### 8. A valid guard is restored
+
+Path: `src/Payments/PaymentService.cs`
+
+```diff
+- if (amount < 0) throw new ArgumentOutOfRangeException(nameof(amount));
++ if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+```
+
+Expected review: recognize that this fixes the zero-value payment check under
+**PR-001**. It should recommend verification without claiming tests ran or approving
+a merge. This is a useful comparison with scenario 1, not proof of whole-app safety.
+
+### Run the actual automated tests
+
+From the repository root with Python dependencies and .NET SDK 8 installed:
+
+```bash
+python -m pytest tests -q
+dotnet test sample-dotnet/PaymentRuleGuard.Tests/PaymentRuleGuard.Tests.csproj --configuration Release
+```
+
+Python tests validate retrieval and the mocked review flow; they do not assess a
+live model's accuracy. The .NET tests exercise the sample payment/refund services;
+the provider/database transaction integration test remains skipped.
+
+To reproduce a real failure for scenario 1, temporarily change `amount <= 0` to
+`amount < 0` in `sample-dotnet/PaymentRuleGuard/PaymentService.cs`, then run:
+
+```bash
+dotnet test sample-dotnet/PaymentRuleGuard.Tests/PaymentRuleGuard.Tests.csproj --filter "FullyQualifiedName~RejectsNonPositiveAmounts"
+```
+
+The zero-amount case should fail while the negative-amount case still passes.
+Restore the original guard afterward and rerun the same command. Make this local
+experiment only with a clean file or a backup; do not commit the intentional bug.
 
 ## Adding a new rule
 1. Add a unique rule ID and Markdown text.

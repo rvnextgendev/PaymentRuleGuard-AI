@@ -1,0 +1,43 @@
+name: PaymentRuleGuard AI Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  issues: write
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: xUnit tests and coverage
+        run: dotnet test sample-dotnet/PaymentRuleGuard.Tests/PaymentRuleGuard.Tests.csproj --configuration Release --collect:"XPlat Code Coverage" --logger trx
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pytest
+      - run: python -m pytest tests -q
+  ai-review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r backend/requirements.txt
+      - name: AI advisory PR comment
+        working-directory: backend
+        env:
+          LLM_PROVIDER: groq
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python github_review.py

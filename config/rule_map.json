@@ -1,0 +1,8 @@
+{
+  "global_rules": ["rules/global.md"],
+  "components": {
+    "payments": {"paths": ["**/Payment*.cs", "**/Payments/**"], "rules": ["rules/global.md"], "tests": ["PaymentRuleGuard.Tests.PaymentTests"]},
+    "refunds": {"paths": ["**/Refund*.cs", "**/Refunds/**"], "rules": ["rules/refunds.md"], "tests": ["PaymentRuleGuard.Tests.RefundTests"]},
+    "transactions": {"paths": ["**/Transaction*.cs", "**/Transactions/**"], "rules": ["rules/transactions.md"], "tests": ["PaymentRuleGuard.Tests.TransactionTests"]}
+  }
+}

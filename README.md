@@ -24,6 +24,28 @@ Separate project for **one .NET payment application**. No vector DB, embeddings,
 - Rule tests: from repository root, `python -m pytest tests -q`
 - .NET tests: `dotnet test sample-dotnet/PaymentRuleGuard.Tests/PaymentRuleGuard.Tests.csproj --collect:"XPlat Code Coverage"`
 
+## LangGraph, LangChain, and Groq integration
+
+The compiled graph follows `START → retrieve_rules → review_change → END`.
+Unmapped C# files or missing rules route to `manual_review → END` without calling a model.
+The review node uses a LangChain `ChatPromptTemplate | ChatGroq/ChatOllama | StrOutputParser`
+chain. FastAPI and the GitHub review script share this graph.
+
+For Groq, configure `backend/.env` (never commit your key):
+```dotenv
+LLM_PROVIDER=groq
+GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_API_KEY=<your-key>
+```
+The backend loads this file automatically; injected environment variables take precedence.
+For GitHub Actions, configure the repository Actions secret `GROQ_API_KEY`.
+Groq requests use a 60-second timeout and two retries. Ollama remains the default local provider.
+
+Run `python -m pytest tests -q` after installing `backend/requirements.txt` to verify
+retrieval, graph routing, LangChain prompt/output handling, and provider configuration.
+These tests use a fake model and do not require credentials or contact an LLM service.
+A live Groq review additionally requires a valid key and access to `api.groq.com`.
+
 ## Demo scenario
 Review `src/Payments/PaymentService.cs` with diff:
 ```

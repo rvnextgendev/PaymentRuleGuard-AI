@@ -10,6 +10,75 @@ Separate project for **one .NET payment application**. No vector DB, embeddings,
 5. CI runs actual .NET xUnit tests and coverage collection independently of the LLM.
 6. GitHub Actions posts an advisory PR comment. Humans approve merges.
 
+## Docker Compose: Ollama, API, and Streamlit
+
+Install Docker Engine/Desktop with Docker Compose v2, then run these commands
+from the repository root. Docker must have enough memory and disk for your model
+(the default `llama3.2:3b` download is several GB). This configuration runs on CPU;
+an NVIDIA GPU is optional and requires a separate Docker GPU configuration.
+
+### Start
+
+```bash
+docker compose up --build -d
+# Follow the initial model download (the app waits until it completes):
+docker compose logs -f ollama-init
+```
+
+Press Ctrl+C to leave the logs; the containers keep running. The first start
+builds the Python image and downloads the model. Later starts reuse the named
+`ollama-data` volume. `ollama-init` exiting with code 0 is expected.
+
+Once ready, open Streamlit at http://localhost:8501. The API is at
+http://localhost:8000/docs and Ollama is at http://localhost:11434.
+Ports bind only to the local machine. Inside Docker, Streamlit calls
+`http://backend:8000` and the API calls `http://ollama:11434`.
+No Groq key or host Ollama installation is required. An existing host service
+using ports 11434, 8000, or 8501 must be stopped or the host ports changed in
+`compose.yaml`.
+
+### Check status and logs
+
+```bash
+docker compose ps -a
+docker compose logs -f backend streamlit
+curl --fail http://localhost:8000/health
+curl --fail http://localhost:8501/_stcore/health
+```
+
+Use the Streamlit Review tab with the demo below to exercise the local model.
+Model inference can take longer on CPU than the UI request timeout. If startup
+fails, inspect `docker compose logs ollama ollama-init backend` and check available
+memory, disk space, and model-registry connectivity.
+
+### Stop and restart
+
+```bash
+# Stop containers, retaining them and the downloaded model:
+docker compose stop
+# Start again (also recreates containers if configuration changed):
+docker compose up -d
+# Remove containers and the Compose network, retaining the downloaded model:
+docker compose down
+```
+
+To rebuild after code/dependency changes, run `docker compose up --build -d`.
+To delete the downloaded model as well, run `docker compose down --volumes`.
+This permanently removes the `ollama-data` volume; the next start downloads again.
+
+### Choose another Ollama model
+
+Create a `.env` file in the repository root (separate from `backend/.env`):
+
+```dotenv
+OLLAMA_MODEL=llama3.2:3b
+```
+
+Set this to your preferred Ollama model tag and run `docker compose up -d`.
+Compose passes the same model name to the download job and backend. Model pulls
+need Internet access to Ollama's registry and artifact storage. The Compose
+stack explicitly selects Ollama; `backend/.env` Groq settings do not override it.
+
 ## Local setup
 - Requirements: Python 3.11+, .NET SDK 8, and Ollama (or Groq API key).
 - `cd backend`

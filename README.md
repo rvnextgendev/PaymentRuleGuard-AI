@@ -10,17 +10,51 @@ Requires Docker Desktop, Python 3.11+, VS Code, and Microsoft's **Python** and
 
 ### 1. Prepare Python (PowerShell, repository root)
 
+In VS Code, use **File > Open Folder** to open `PaymentRuleGuard-AI`, then
+**Terminal > New Terminal** and select **PowerShell**. Run the commands below
+from the repository root: the folder containing `README.md`, `compose.yaml`,
+and `backend`. If your terminal is in another folder, first use
+`cd C:\Users\RajeshDas\PaymentRuleGuard-AI` (replace this with your checkout path).
+
+Check that Python is installed:
+
 ```powershell
+python --version
+```
+
+This should show Python **3.11 or newer**. Then copy and run this entire block:
+
+```powershell
+# Create a project-specific Python environment if it does not already exist.
 if (-not (Test-Path backend/.venv/Scripts/python.exe)) {
     python -m venv backend/.venv
 }
+
+# Install the API, UI, model integration, and test dependencies into that environment.
 .\backend\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+
+# Create local configuration from the example, preserving any existing .env file.
 if (-not (Test-Path backend/.env)) {
     Copy-Item backend/.env.example backend/.env
 }
 ```
 
-Select `backend/.venv/Scripts/python.exe` using **Python: Select Interpreter**.
+The `.venv` folder keeps this project's packages separate from other Python
+projects. These commands call its Python executable directly, so you do not
+need to activate the environment. Wait for installation to finish without errors.
+You should now have `backend/.venv/Scripts/python.exe` and `backend/.env`;
+you will update the Ollama connection settings in step 3.
+
+Tell VS Code to use the same Python environment for debugging:
+
+1. Press **Ctrl+Shift+P** to open the Command Palette.
+2. Search for **Python: Select Interpreter** and select it.
+3. Choose the interpreter at `backend\.venv\Scripts\python.exe`.
+   If it is missing from the list, choose **Enter interpreter path > Find**,
+   then browse to that file inside your checkout.
+
+If the interpreter command is missing, install Microsoft's **Python** extension
+and reopen the Command Palette.
 
 ### 2. Start only Ollama in Docker
 

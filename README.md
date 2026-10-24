@@ -8,6 +8,19 @@ Reviews C# payment changes against mapped Markdown rules using LangGraph and Oll
 Requires Docker Desktop, Python 3.11+, VS Code, and Microsoft's **Python** and
 **Python Debugger** extensions. Open this repository root in VS Code.
 
+**Docker starting successfully does not start the UI in this debug workflow.**
+You must also start the local API and Streamlit in step 4 before opening the browser.
+
+| Service | Runs where during debugging? | Address |
+| --- | --- | --- |
+| Ollama | Docker Desktop | http://localhost:11435 |
+| FastAPI backend | Local Python, started by VS Code | http://localhost:8000/docs |
+| Streamlit UI | Local Python, started by VS Code | http://localhost:8501 |
+
+With Docker Desktop's **Only show running containers** enabled, seeing only
+`ollama-1` is expected. The model-download container exits after completion;
+the local API and UI never appear as running containers in this mode.
+
 ### 1. Prepare Python (PowerShell, repository root)
 
 In VS Code, use **File > Open Folder** to open `PaymentRuleGuard-AI`, then
@@ -75,6 +88,7 @@ Invoke-RestMethod http://localhost:11435/api/tags
 
 The list should contain `llama3.2:3b`. The debug override publishes Docker Ollama
 on host port **11435**; no edits to `compose.yaml` are needed.
+At this point, only Ollama is started. Continue through steps 3 and 4 to start the UI.
 
 ### 3. Configure local Python
 
@@ -90,14 +104,31 @@ API_URL=http://localhost:8000
 Keep `OLLAMA_MODEL` equal to the Compose model (default `llama3.2:3b`). To change
 it, also set `OLLAMA_MODEL` in a repository-root `.env` and rerun step 2.
 
-### 4. Set breakpoints and click Review
+### 4. Start BOTH local debug sessions, then open the UI
 
 1. Set breakpoints at `return review_diff(...)` in `backend/app.py`, inside
    `collect` / `analyze` in `backend/review.py`, and at `r = requests.post(...)`
    in `backend/streamlit_app.py`.
-2. Open **Run and Debug**, choose **Debug UI + API (Docker Ollama)**, and press
-   **F5**. Wait for API startup. Both Python processes run locally under VS Code.
-3. Open http://localhost:8501 and select **PR Review**. Use path
+2. Press **Ctrl+Shift+D** to open **Run and Debug**. In the dropdown beside the
+   green play button, select **Debug UI + API (Docker Ollama)**, then press **F5**.
+   This starts **Debug FastAPI review API** AND **Debug Streamlit UI**.
+   Selecting only **Debug FastAPI review API** starts the backend alone;
+   it does not start Streamlit.
+3. Check **Run and Debug > CALL STACK** for both sessions. In the terminals, wait
+   for the API's **Application startup complete** message and Streamlit's startup
+   output showing port **8501**. If only the API session is running, leave it
+   running, select **Debug Streamlit UI** in the dropdown, and click the green
+   play button to start the second session.
+4. Check both services in a new PowerShell terminal:
+
+   ```powershell
+   Invoke-RestMethod http://localhost:8000/health
+   Invoke-RestMethod http://localhost:8501/_stcore/health
+   ```
+
+   Expected: API status `ok` and Streamlit response `ok`. If either fails, inspect
+   that session's terminal for a startup error before continuing.
+5. Open http://localhost:8501 and select **PR Review**. Use path
    `src/Payments/PaymentService.cs` and this diff:
 
    ```diff
@@ -105,7 +136,7 @@ it, also set `OLLAMA_MODEL` in a repository-root `.env` and rerun step 2.
    + if (amount < 0) throw new ArgumentOutOfRangeException(nameof(amount));
    ```
 
-4. Click **Review change**. Continue the UI breakpoint with **F5**, then select
+6. Click **Review change**. Continue the UI breakpoint with **F5**, then select
    the API debug session when it pauses. Use **F10** to step over, **F11** to step
    into, and **F5** to continue. Expand **Mapped rules and tests** in the result.
 
@@ -114,10 +145,38 @@ Flow: UI -> `POST /review` -> rule retrieval -> model -> UI result.
 For a model-free check, use `src/Unknown/Unknown.cs`: it returns manual review
 and skips `analyze`. API-only debugging is also available at http://localhost:8000/docs.
 
+### If Streamlit still does not open: start it explicitly
+
+To check startup outside the debugger, stop the VS Code API/UI sessions first.
+Open **two PowerShell terminals** in the repository root and keep both running.
+Ollama should remain running in Docker from step 2.
+
+**Terminal 1 - start the API:**
+
+```powershell
+Set-Location backend
+.\.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8000
+```
+
+**Terminal 2 - start Streamlit:**
+
+```powershell
+Set-Location backend
+.\.venv\Scripts\python.exe -m streamlit run streamlit_app.py --server.address=127.0.0.1 --server.port=8501
+```
+
+Now open http://localhost:8501. Closing these terminals or pressing **Ctrl+C**
+stops the corresponding service. These commands run without VS Code breakpoints;
+stop both with **Ctrl+C**, then use step 4 when you want to debug.
+If a port is already in use, stop the previous process using that port before
+starting another copy. This also applies to any background sessions started earlier.
+
 ## Quick fixes
 
 | Problem | Fix |
 | --- | --- |
+| Only Ollama appears in Docker Desktop | Expected in debug mode. Start the two local Python sessions in step 4. |
+| Port 8501 refuses connection | Streamlit has not started or exited. Start **Debug Streamlit UI** and check its terminal, or use the two-terminal instructions above. |
 | Breakpoint never hits | Stop old Docker API/UI and terminal Python processes. Use the F5 sessions on ports 8000/8501. |
 | Ollama connection refused | Repeat step 2; verify `/api/tags` and `OLLAMA_BASE_URL=http://localhost:11435`. |
 | Model missing | Run `docker compose -f compose.yaml -f compose.debug.yaml run --rm ollama-init`. |

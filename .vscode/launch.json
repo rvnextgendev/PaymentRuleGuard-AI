@@ -39,5 +39,15 @@
         "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe"
       }
     }
+  ],
+  "compounds": [
+    {
+      "name": "Debug UI + API (Docker Ollama)",
+      "configurations": [
+        "Debug FastAPI review API",
+        "Debug Streamlit UI"
+      ],
+      "stopAll": true
+    }
   ]
 }

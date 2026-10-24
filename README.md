@@ -71,7 +71,11 @@ and reopen the Command Palette.
 
 ### 2. Start only Ollama in Docker
 
-Stop any old local API/UI processes or debug sessions first. Then run:
+Before starting, stop previous API/UI debug sessions with **Shift+F5**. In any
+terminal running Uvicorn or Streamlit, press **Ctrl+C**. Docker stop commands
+only stop containers; they do not stop local or background Python processes.
+If ports 8000 or 8501 remain occupied, follow the port-conflict instructions below.
+Then run:
 
 ```powershell
 docker compose stop backend streamlit
@@ -112,6 +116,8 @@ it, also set `OLLAMA_MODEL` in a repository-root `.env` and rerun step 2.
 2. Press **Ctrl+Shift+D** to open **Run and Debug**. In the dropdown beside the
    green play button, select **Debug UI + API (Docker Ollama)**, then press **F5**.
    This starts **Debug FastAPI review API** AND **Debug Streamlit UI**.
+   Start the compound once: pressing F5 again while paused continues execution.
+   If either service is already running outside this compound, stop it first.
    Selecting only **Debug FastAPI review API** starts the backend alone;
    it does not start Streamlit.
 3. Check **Run and Debug > CALL STACK** for both sessions. In the terminals, wait
@@ -171,11 +177,54 @@ stop both with **Ctrl+C**, then use step 4 when you want to debug.
 If a port is already in use, stop the previous process using that port before
 starting another copy. This also applies to any background sessions started earlier.
 
+### Fix `[Errno 10048]`: port 8000 or 8501 is already in use
+
+This error means another process already owns the port. Even if the log says
+**Application startup complete**, a following bind error means that new API
+instance failed to start. An existing API may still answer health checks, but
+requests to it will not hit breakpoints in your new debug session.
+
+1. Stop existing VS Code sessions with **Shift+F5**, stop terminal servers with
+   **Ctrl+C**, and stop Docker API/UI containers:
+
+   ```powershell
+   docker compose stop backend streamlit
+   ```
+
+2. In PowerShell, find any remaining listeners and inspect their command lines:
+
+   ```powershell
+   $appListeners = Get-NetTCPConnection -LocalPort 8000,8501 -State Listen -ErrorAction SilentlyContinue
+   $appListeners | Select-Object LocalPort, OwningProcess
+   $appListeners.OwningProcess | Sort-Object -Unique | ForEach-Object {
+       Get-CimInstance Win32_Process -Filter "ProcessId = $_" |
+           Select-Object ProcessId, ParentProcessId, CommandLine
+   }
+   ```
+
+3. If the command line confirms an old Uvicorn or Streamlit process for this
+   project, stop its **current OwningProcess ID**. For example, if the output
+   shows `12345`, run the following with that number replaced by your actual ID:
+
+   ```powershell
+   Stop-Process -Id 12345
+   ```
+
+   Use the PID reported by the port check, not a PID copied from an earlier run.
+   On Windows, a virtual-environment launcher can create a child Python process;
+   stopping only the launcher can leave the child holding the port. Inspect the
+   listener again rather than stopping every Python process.
+
+4. Repeat the listener check. No output means both ports are free. Keep Docker
+   Ollama running, select **Debug UI + API (Docker Ollama)**, and press **F5** once.
+   Wait for both servers to start without errors, then open http://localhost:8501.
+
 ## Quick fixes
 
 | Problem | Fix |
 | --- | --- |
 | Only Ollama appears in Docker Desktop | Expected in debug mode. Start the two local Python sessions in step 4. |
+| `[Errno 10048]` / address already in use | Follow the port-conflict instructions above, then restart the debug compound once. |
 | Port 8501 refuses connection | Streamlit has not started or exited. Start **Debug Streamlit UI** and check its terminal, or use the two-terminal instructions above. |
 | Breakpoint never hits | Stop old Docker API/UI and terminal Python processes. Use the F5 sessions on ports 8000/8501. |
 | Ollama connection refused | Repeat step 2; verify `/api/tags` and `OLLAMA_BASE_URL=http://localhost:11435`. |
